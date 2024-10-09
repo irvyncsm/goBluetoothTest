@@ -7,6 +7,8 @@ import (
 	"tinygo.org/x/bluetooth"
 )
 
+const CharacteristicPropertyNotify = 0x10
+
 func main() {
 	adapter := bluetooth.DefaultAdapter
 	err := adapter.Enable()
@@ -38,44 +40,43 @@ func main() {
 		}
 		fmt.Println("Connecté au périphérique", device.Address.String())
 
-		// Découverte des services
-		services, err := device.DiscoverServices([]bluetooth.UUID{bluetooth.NewUUID([16]byte{0x00, 0x00, 0x18, 0x0D, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB})}) // UUID du service de fréquence cardiaque
-		// print les services
-		fmt.Println(services)
+		// Découverte de tous les services
+		services, err := device.DiscoverServices(nil)
 		if err != nil {
 			fmt.Println("Erreur lors de la découverte des services:", err)
 			return
 		}
 
-		for _, service := range services {
-			fmt.Printf("Service de fréquence cardiaque découvert: %s\n", service.UUID())
-			// Découverte des caractéristiques pour le service de fréquence cardiaque
-			characteristics, err := service.DiscoverCharacteristics([]bluetooth.UUID{bluetooth.NewUUID([16]byte{0x00, 0x00, 0x2A, 0x37, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB})}) // UUID de la caractéristique de la fréquence cardiaque
-			if err != nil {
-				fmt.Println("Erreur lors de la découverte des caractéristiques:", err)
-				continue
-			}
-
-			for _, characteristic := range characteristics {
-				fmt.Printf("\tCaractéristique de la fréquence cardiaque découverte: %s\n", characteristic.UUID())
-				// Abonnement aux notifications pour la caractéristique de la fréquence cardiaque
-				err = characteristic.EnableNotifications(func(b []byte) {
-					fmt.Println("Notification reçue")
-					// Afficher les données brutes reçues
-					fmt.Printf("Données brutes reçues: %v\n", b)
-					// Vérification des données reçues
-					if len(b) > 1 {
-						heartRate := int(b[1])
-						fmt.Printf("Fréquence cardiaque: %d bpm\n", heartRate)
-					} else {
-						fmt.Println("Données de notification invalides")
-					}
-				})
+		if len(services) == 0 {
+			fmt.Println("Aucun service découvert")
+		} else {
+			for _, service := range services {
+				fmt.Printf("Service découvert: %s\n", service.UUID().String())
+				chars, err := service.DiscoverCharacteristics(nil) // Découvrir toutes les caractéristiques
 				if err != nil {
-					fmt.Println("Erreur lors de l'abonnement aux notifications:", err)
+					fmt.Println("Erreur lors de la découverte des caractéristiques:", err)
 					continue
 				}
-				fmt.Println("\tAbonnement aux notifications réussi")
+				for _, char := range chars {
+					fmt.Printf("Caractéristique découverte: %s\n", char.UUID().String())
+					// Check if notifications are supported
+					if char.Properties()&CharacteristicPropertyNotify != 0 {
+						err = char.EnableNotifications(func(buf []byte) {
+							if len(buf) > 1 {
+								heartRate := buf[1]
+								fmt.Printf("Données reçues: %v\n", buf)
+								fmt.Printf("Fréquence cardiaque: %d bpm\n", heartRate)
+							}
+						})
+						if err != nil {
+							fmt.Println("Erreur lors de l'abonnement aux notifications:", err)
+						} else {
+							fmt.Println("Abonnement aux notifications réussi")
+						}
+					} else {
+						fmt.Println("Notifications non supportées pour cette caractéristique")
+					}
+				}
 			}
 		}
 
